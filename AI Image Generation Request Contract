@@ -1,0 +1,71 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract AIImageRequest is Ownable {
+    IERC20 public paymentToken;
+    uint256 public requestFee;
+    address public aiServiceProvider;
+
+    struct ImageRequest {
+        address requester;
+        string prompt;
+        uint256 timestamp;
+        bool fulfilled;
+        string imageUrl;
+    }
+
+    mapping(uint256 => ImageRequest) public requests;
+    uint256 public requestCount;
+
+    event RequestCreated(uint256 indexed requestId, address indexed requester, string prompt, uint256 timestamp);
+    event RequestFulfilled(uint256 indexed requestId, string imageUrl);
+
+    constructor(IERC20 _paymentToken, uint256 _requestFee, address _aiServiceProvider) {
+        paymentToken = _paymentToken;
+        requestFee = _requestFee;
+        aiServiceProvider = _aiServiceProvider;
+    }
+
+    function createRequest(string memory prompt) external {
+        require(paymentToken.transferFrom(msg.sender, address(this), requestFee), "Payment failed");
+
+        requestCount++;
+        requests[requestCount] = ImageRequest({
+            requester: msg.sender,
+            prompt: prompt,
+            timestamp: block.timestamp,
+            fulfilled: false,
+            imageUrl: ""
+        });
+
+        emit RequestCreated(requestCount, msg.sender, prompt, block.timestamp);
+
+        // Notify the AI service provider (off-chain)
+    }
+
+    function fulfillRequest(uint256 requestId, string memory imageUrl) external {
+        require(msg.sender == aiServiceProvider, "Only AI service provider can fulfill requests");
+        require(!requests[requestId].fulfilled, "Request already fulfilled");
+
+        requests[requestId].fulfilled = true;
+        requests[requestId].imageUrl = imageUrl;
+
+        emit RequestFulfilled(requestId, imageUrl);
+    }
+
+    function withdrawFunds() external onlyOwner {
+        uint256 balance = paymentToken.balanceOf(address(this));
+        require(paymentToken.transfer(msg.sender, balance), "Withdrawal failed");
+    }
+
+    function setRequestFee(uint256 _requestFee) external onlyOwner {
+        requestFee = _requestFee;
+    }
+
+    function setAIServiceProvider(address _aiServiceProvider) external onlyOwner {
+        aiServiceProvider = _aiServiceProvider;
+    }
+}
